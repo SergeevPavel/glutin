@@ -1,6 +1,6 @@
 use glutin::{self, PossiblyCurrent};
 
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 pub mod gl {
     pub use self::Gles2 as Gl;
@@ -9,6 +9,9 @@ pub mod gl {
 
 pub struct Gl {
     pub gl: gl::Gl,
+    pub program: gl::types::GLuint,
+    pub width: f32,
+    pub height: f32,
 }
 
 pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
@@ -24,7 +27,7 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
 
     println!("OpenGL version {}", version);
 
-    unsafe {
+    let program = unsafe {
         let vs = gl.CreateShader(gl::VERTEX_SHADER);
         gl.ShaderSource(
             vs,
@@ -88,26 +91,49 @@ pub fn load(gl_context: &glutin::Context<PossiblyCurrent>) -> Gl {
         );
         gl.EnableVertexAttribArray(pos_attrib as gl::types::GLuint);
         gl.EnableVertexAttribArray(color_attrib as gl::types::GLuint);
-    }
+        program
+    };
 
-    Gl { gl: gl }
+    Gl { gl: gl, program, width: 1.0, height: 1.0 }
 }
 
 impl Gl {
     pub fn draw_frame(&self, color: [f32; 4]) {
         unsafe {
+            let widthLocation = self.gl.GetUniformLocation(self.program, CString::new("windowWidth").unwrap().as_ptr());
+            let heightLocation = self.gl.GetUniformLocation(self.program, CString::new("windowHeight").unwrap().as_ptr());
+            self.gl.Uniform1f(widthLocation, self.width);
+            self.gl.Uniform1f(heightLocation, self.height);
+
             self.gl.ClearColor(color[0], color[1], color[2], color[3]);
             self.gl.Clear(gl::COLOR_BUFFER_BIT);
+
             self.gl.DrawArrays(gl::TRIANGLES, 0, 3);
         }
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.width = width as f32;
+        self.height = height as f32;
+
+        // unsafe {
+            // self.gl.Viewport(0,
+            //                  0,
+            //                  width.try_into().unwrap(),
+            //                  height.try_into().unwrap());
+        // }
     }
 }
 
 #[rustfmt::skip]
 static VERTEX_DATA: [f32; 15] = [
-    -0.5, -0.5,  1.0,  0.0,  0.0,
-     0.0,  0.5,  0.0,  1.0,  0.0,
-     0.5, -0.5,  0.0,  0.0,  1.0,
+     0.0,  0.0,      1.0,  0.0,  0.0,
+     0.0,  800.0,    0.0,  1.0,  0.0,
+     800.0, 0.0,     0.0,  0.0,  1.0,
+
+     // 0.0,  800.0,    0.0,  1.0,  0.0,
+     // 800.0, 0.0,     0.0,  0.0,  1.0,
+     // 800.0, 800.0,   0.0,  0.0,  1.0,
 ];
 
 const VS_SRC: &'static [u8] = b"
@@ -116,11 +142,13 @@ precision mediump float;
 
 attribute vec2 position;
 attribute vec3 color;
+uniform float windowWidth;
+uniform float windowHeight;
 
 varying vec3 v_color;
 
 void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
+    gl_Position = vec4(position.x / windowWidth, position.y / windowHeight, 0.0, 1.0);
     v_color = color;
 }
 \0";
@@ -139,6 +167,7 @@ void main() {
 pub use self::context_tracker::{
     ContextCurrentWrapper, ContextId, ContextTracker, ContextWrapper,
 };
+use std::convert::TryInto;
 
 #[allow(dead_code)] // Not used by all examples
 mod context_tracker {
